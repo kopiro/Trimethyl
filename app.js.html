@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: app.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: app.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * @module  app
+ * @author 	Flavio De Stefano &lt;flavio.destefano@caffeinalab.com>
+ */
+
+/**
+ * @property config
+ * @property {Boolean} [config.enqueueRouteWithUniversalLink=true] 	Auto enqueue route with Universal link
+ * @property {Boolean} [config.enqueueRouteWithDeepLink=true] 			Auto enqueue route with deep link
+ */
+exports.config = _.extend({
+	enqueueRouteWithUniversalLink: true,
+	enqueueRouteWithDeepLink: true,
+}, Alloy.CFG.T ? Alloy.CFG.T.app : {});
+
+var Util = require('T/util');
+var Router = require('T/router');
+
+/**
+ * A static method used to convert a Universal link to a route
+ * With its default implementation, the original incoming string is return.
+ * You can override this function to get a different behaviour
+ * @param  {String} url The URL
+ * @return {String} The route
+ */
+exports.universalLinkToRoute = function(url) { return url; };
+
+/**
+ * A static method used to convert a Deep link to a route
+ * With its default implementation, the original incoming string is return
+ * You can override this function to get a different behaviour
+ * @param  {String} url The URL
+ * @return {String} The route
+ */
+exports.deepLinkToRoute = function(url) { return url; };
+
+
+/**
+ * Check if the first opening of the app.  
+ * Call {@link setFirstUse} to set the first use of the app.
+ * @param {String} [prefix=""] A prefix to apply
+ * @return {Boolean}
+ */
+exports.isFirstUse = function(prefix) {
+	prefix = prefix || '';
+	return !Ti.App.Properties.hasProperty('app.firstuse' + prefix);
+};
+
+/**
+ * Set the app first usage date.
+ * @param {String} [prefix=""] A prefix to apply
+ * Use in conjunction with {@link isFirstUse}
+ */
+exports.setFirstUse = function(prefix) {
+	prefix = prefix || '';
+	Ti.App.Properties.setString('app.firstuse' + prefix, Util.now());
+};
+
+/**
+ * Check on the App/Play store if new version of this app has been released.
+ * If it is, a dialog is shown to update the app.
+ * @param  {String} 		url
+ * @param  {Function} 	versionCb
+ * @param  {Function} 	successCb
+ */
+exports.notifyUpdate = function(url, versionCb, successCb) {
+	if (!Ti.Network.online) return;
+
+	if (url == null) {
+		if (OS_IOS) {
+			url = 'https://itunes.apple.com/lookup?bundleId=' + Ti.App.id;
+		} else {
+			return null;
+		}
+	}
+
+	versionCb = versionCb || function(response) {
+		if (OS_IOS) {
+			return (response.results &amp;&amp; response.results[0]) ? response.results[0].version : null;
+		} else {
+			return null;
+		}
+	};
+
+	successCb = successCb || function(response) {
+		Util.openInStore((function() {
+			if (OS_IOS) return response.results[0].trackId;
+			else return null;
+		})() );
+	};
+
+	require('T/http').send({
+		url: url,
+		cache: false,
+		format: 'json',
+		success: function(response) {
+			if (response == null || !_.isObject(response)) return;
+
+			var new_version = versionCb(response);
+			var version_compare = Util.compareVersions(new_version, Ti.App.version);
+
+			Ti.API.info('Util: App store version is ' + new_version);
+			Ti.API.info('Util: Current version is ' + Ti.App.version);
+
+			if (version_compare > 0) {
+				require('T/dialog').confirm(
+				L('app_new_version_title', 'Update available'),
+				String.format(L('app_new_version_message', 'A new version of %s is available: %s'), Ti.App.name, new_version), [
+				{
+					title: L('app_new_version_button_later', 'Later'),
+					callback: function() {
+						require('T/ga').trackEvent('updatedialog', 'later');
+					}
+				},
+				{
+					title: L('app_new_version_button_update', 'Update'),
+					selected: true,
+					callback: function() {
+						successCb(response);
+					}
+				}
+				]);
+			}
+		}
+	});
+};
+
+
+//////////
+// Init //
+//////////
+
+if (OS_IOS) {
+
+	if (exports.config.enqueueRouteWithDeepLink) {
+		// The "resume" event is to handle all incoming deep links
+		Ti.App.addEventListener('resumed', function() {
+			var url = Util.parseSchema();
+			Ti.API.info('App: Resumed with schema &lt;' + url + '>');
+			
+			if (url != null) {
+				Router.go( exports.deepLinkToRoute(url) );
+			}
+		});
+	}
+
+	if (exports.config.enqueueRouteWithUniversalLink) {
+		// This one "continueactivity.NSUserActivityTypeBrowsingWeb", handle Universal Links
+		Ti.App.iOS.addEventListener('continueactivity', function(e) {
+			if (e.activityType !== 'NSUserActivityTypeBrowsingWeb') return;
+			if (e.webpageURL != null) {
+				Router.enqueue( exports.universalLinkToRoute(e.webpageURL) );
+			}
+		});
+	}
+
+}
+
+var url = Util.parseSchema();
+
+if (url != null) {
+	Ti.API.info('App: Started with schema &lt;' + url + '>');
+
+	if (exports.config.enqueueRouteWithDeepLink) {
+		Router.enqueue( exports.deepLinkToRoute(url) );
+	}
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-animator.html">animator</a></li><li><a href="module-app.html">app</a></li><li><a href="module-auth.html">auth</a></li><li><a href="module-auth_bypass.html">auth/bypass</a></li><li><a href="module-auth_facebook.html">auth/facebook</a></li><li><a href="module-auth_std.html">auth/std</a></li><li><a href="module-cache.html">cache</a></li><li><a href="module-cache_database.html">cache/database</a></li><li><a href="module-calendar.html">calendar</a></li><li><a href="module-camera.html">camera</a></li><li><a href="module-device.html">device</a></li><li><a href="module-dialog.html">dialog</a></li><li><a href="module-event.html">event</a></li><li><a href="module-fb.html">fb</a></li><li><a href="module-filesystem.html">filesystem</a></li><li><a href="module-flow.html">flow</a></li><li><a href="module-ga.html">ga</a></li><li><a href="module-geo.html">geo</a></li><li><a href="module-http.html">http</a></li><li><a href="module-image.html">image</a></li><li><a href="module-logger.html">logger</a></li><li><a href="module-logger_api.html">logger/api</a></li><li><a href="module-logger_telegram.html">logger/telegram</a></li><li><a href="module-matrix.html">matrix</a></li><li><a href="module-notifications.html">notifications</a></li><li><a href="module-notifications_cloud.html">notifications/cloud</a></li><li><a href="module-notifications_http.html">notifications/http</a></li><li><a href="module-notifications_parse.html">notifications/parse</a></li><li><a href="module-permissions.html">permissions</a></li><li><a href="module-prop.html">prop</a></li><li><a href="module-router.html">router</a></li><li><a href="module-sharer.html">sharer</a></li><li><a href="module-sounds.html">sounds</a></li><li><a href="module-spotlight.html">spotlight</a></li><li><a href="module-sqlite.html">sqlite</a></li><li><a href="module-support_oauth.html">support/oauth</a></li><li><a href="module-trimethyl.html">trimethyl</a></li><li><a href="module-uifactory.html">uifactory</a></li><li><a href="module-uifactory_backgroundview.html">uifactory/backgroundview</a></li><li><a href="module-uifactory_imageloadingview.html">uifactory/imageloadingview</a></li><li><a href="module-uifactory_imageview.html">uifactory/imageview</a></li><li><a href="module-uifactory_label.html">uifactory/label</a></li><li><a href="module-uifactory_listview.html">uifactory/listview</a></li><li><a href="module-uifactory_navigationwindow.html">uifactory/navigationwindow</a></li><li><a href="module-uifactory_select.html">uifactory/select</a></li><li><a href="module-uifactory_textarea.html">uifactory/textarea</a></li><li><a href="module-uifactory_textfield.html">uifactory/textfield</a></li><li><a href="module-uifactory_view.html">uifactory/view</a></li><li><a href="module-uifactory_window.html">uifactory/window</a></li><li><a href="module-uifactory_youtubevideowebview.html">uifactory/youtubevideowebview</a></li><li><a href="module-uifactory_zoomimageview.html">uifactory/zoomimageview</a></li><li><a href="module-uiutil.html">uiutil</a></li><li><a href="module-util.html">util</a></li><li><a href="module-weballoy.html">weballoy</a></li><li><a href="uifactory.module_backgroundview.html">backgroundview</a></li><li><a href="uifactory.module_button.html">button</a></li><li><a href="uifactory.module_tabbedbar.html">tabbedbar</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.0</a> on Tue May 03 2016 18:29:41 GMT+0200 (CEST)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
